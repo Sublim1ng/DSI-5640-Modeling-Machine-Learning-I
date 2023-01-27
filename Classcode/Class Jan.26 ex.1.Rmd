@@ -1,0 +1,188 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+library('splines')        ## for 'bs'
+library('scatterplot3d')  ## for 'scatterplot3d'
+library('manipulate')     ## for 'manipulate'
+library('beeswarm')
+
+###  Linear regression examples ###
+
+## load prostate data
+prostate <- 
+  read.table(url(
+    'https://web.stanford.edu/~hastie/ElemStatLearn/datasets/prostate.data'))
+
+pairs(prostate)
+
+## predict lcavol from lcp
+## fit linear model with squared error loss
+fit <- lm(lcavol ~ lcp, data=prostate)
+summary(fit)
+coef(fit)
+residuals(fit)
+plot(prostate$lcp, prostate$lcavol,
+     xlab='lcp', ylab='lcavol')
+abline(fit)
+
+
+## use linear spline in lcp with 1 knots
+quants <- function(x, n) {
+  nb <- as.integer(n + 1)
+  qs <- seq(1/nb, n/nb, 1/nb)
+  quantile(x, probs=qs)
+}
+lcp_knots <- quants(prostate$lcp, 1)
+fit <- lm(lcavol ~ bs(lcp, knots=lcp_knots, degree=1), data=prostate)
+summary(fit)
+coef(fit)
+residuals(fit)
+plot(prostate$lcp, prostate$lcavol,
+     xlab='lcp', ylab='lcavol')
+x_grid <- seq(min(prostate$lcp), max(prostate$lcp), length.out=100)
+lines(x_grid, predict(fit, data.frame(lcp=x_grid)))
+abline(v=lcp_knots, lty=3)
+
+
+## consider two predictors
+fit <- lm(lcavol ~ lcp + age, data=prostate)
+summary(fit)
+coef(fit)
+residuals(fit)
+manipulate({
+  s3d <- scatterplot3d(
+    x=prostate$lcp, y=prostate$age, z=prostate$lcavol,
+    xlab='lcp', ylab='age', zlab='lcavol',
+    color='blue', pch=19, angle=angle.slider)
+  # Add regression surface
+  s3d$contour3d(fit)
+}, angle.slider=slider(0,90,55,'angle'))
+
+
+## two predictors with interaction
+fit <- lm(lcavol ~ lcp + age + lcp:age, data=prostate) # lcavol ~ lcp * age
+summary(fit)
+coef(fit)
+residuals(fit)
+manipulate({
+  s3d <- scatterplot3d(
+    x=prostate$lcp, y=prostate$age, z=prostate$lcavol,
+    xlab='lcp', ylab='age', zlab='lcavol',
+    color='blue', pch=19, angle=angle.slider)
+  # Add regression surface
+  s3d$contour3d(fit)
+}, angle.slider=slider(0,90,55,'angle'))
+
+
+## two predictors with linear splines
+lcp_knots <- quants(prostate$lcp, 1)
+age_knots <- quants(prostate$age, 1)
+fit <- lm(lcavol ~ bs(lcp, knots=lcp_knots, degree=1) + 
+                   bs(age, knots=age_knots, degree=1),
+          data=prostate)
+summary(fit)
+coef(fit)
+residuals(fit)
+manipulate({
+  s3d <- scatterplot3d(
+    x=prostate$lcp, y=prostate$age, z=prostate$lcavol,
+    xlab='lcp', ylab='age', zlab='lcavol',
+    color='blue', pch=19, angle=angle.slider)
+  # Add regression surface
+  s3d$contour3d(function(x, y) {
+    predict(fit, data.frame(lcp=x, age=y))
+  })
+}, angle.slider=slider(0,90,55,'angle'))
+
+
+## two predictors with linear splines and interaction
+lcp_knots <- quants(prostate$lcp, 1)
+age_knots <- quants(prostate$age, 1)
+fit <- lm(lcavol ~ bs(lcp, knots=lcp_knots, degree=1) *
+                   bs(age, knots=age_knots, degree=1),
+          data=prostate)
+summary(fit)
+coef(fit)
+residuals(fit)
+manipulate({
+  s3d <- scatterplot3d(
+    x=prostate$lcp, y=prostate$age, z=prostate$lcavol,
+    xlab='lcp', ylab='age', zlab='lcavol',
+    color='blue', pch=19, angle=angle.slider)
+  # Add regression surface
+  s3d$contour3d(function(x, y) {
+    predict(fit, data.frame(lcp=x, age=y))
+  })
+}, angle.slider=slider(0,90,55,'angle'))
+
+
+## categorical (binary) predictor
+table(prostate$svi)
+prostate$svi <- as.factor(prostate$svi)
+fit <- lm(lcavol ~ svi, data=prostate)
+summary(fit)
+coef(fit)
+residuals(fit)
+beeswarm(lcavol ~ svi, data=prostate,
+     xlab='svi', ylab='lcavol')
+x_grid <- factor(c('0','1'), levels(prostate$svi))
+points(x=x_grid, 
+       y=predict(fit, data.frame(svi=x_grid)),
+       pch=4, col='red', cex=2, lwd=4)
+
+
+## categorical (multiclass) predictor
+table(prostate$gleason)
+prostate$gleason <- as.factor(prostate$gleason)
+fit <- lm(lcavol ~ gleason, data=prostate)
+summary(fit)
+coef(fit)
+residuals(fit)
+beeswarm(lcavol ~ gleason, data=prostate,
+         xlab='gleason', ylab='lcavol')
+x_grid <- factor(levels(prostate$gleason),
+                 levels(prostate$gleason))
+points(x=x_grid, 
+       y=predict(fit, data.frame(gleason=x_grid)),
+       pch=4, col='red', cex=2, lwd=4)
+
+
+## categorical and quantitative predictor
+fit <- lm(lcavol ~ gleason + age, data=prostate)
+summary(fit)
+coef(fit)
+residuals(fit)
+manipulate({
+  s3d <- scatterplot3d(
+    x=prostate$gleason, y=prostate$age, z=prostate$lcavol,
+    xlab='gleason', ylab='age', zlab='lcavol',
+    color='blue', pch=19, angle=angle.slider)
+  # Add regression surface
+  gleason_lev <- levels(prostate$gleason)
+  s3d$contour3d(function(x, y) {
+    predict(fit, data.frame(
+      gleason=factor(gleason_lev[x], gleason_lev), age=y))
+  })
+}, angle.slider=slider(0,90,55,'angle'))
+
+
+## categorical and quantitative predictor with interaction
+fit <- lm(lcavol ~ gleason * age, data=prostate)
+summary(fit)
+coef(fit)
+residuals(fit)
+manipulate({
+  s3d <- scatterplot3d(
+    x=prostate$gleason, y=prostate$age, z=prostate$lcavol,
+    xlab='gleason', ylab='age', zlab='lcavol',
+    color='blue', pch=19, angle=angle.slider)
+  # Add regression surface
+  gleason_lev <- levels(prostate$gleason)
+  s3d$contour3d(function(x, y) {
+    suppressWarnings(predict(fit, data.frame(
+      gleason=factor(gleason_lev[x], gleason_lev), age=y)))
+  })
+}, angle.slider=slider(0,90,55,'angle'))
+

@@ -1,0 +1,55 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+library('MASS')
+library('splines')
+library('manipulate')
+
+?mcycle
+
+y <- mcycle$accel
+x <- mcycle$times
+
+plot(x, y, 
+     xlab="Time (ms)",
+     ylab="Acceleration (g)")
+
+
+quants <- function(x, n) {
+  nb <- as.integer(n + 1)
+  qs <- seq(1/nb, n/nb, 1/nb)
+  quantile(x, probs=qs)
+}
+
+## linear spline
+x_plot <- seq(min(x),max(x),length.out=1000)
+x_iqr <- quants(x, 3)
+fit_sp <- lm(y ~ bs(x, knots=x_iqr, degree=1))
+y_hat_plot <- predict(fit_sp, data.frame(x=x_plot))
+plot(x, y, 
+     xlab="Time (ms)", 
+     ylab="Acceleration (g)",
+     main="Linear spline")
+lines(x_plot, y_hat_plot, col="#882255", lwd=2)
+abline(v=x_iqr, lty=3)
+legend('topleft',paste0("# knots: ", "3"), bty='n')
+
+
+## use manipulate to quickly see how # knots affects fit
+manipulate({
+    x_plot <- seq(min(x),max(x),length.out=1000)
+    x_knots <- quants(x, n=nknots.slider)
+    fit_sp <- lm(y ~ bs(x, knots=x_knots, degree=1))
+    y_hat_plot <- predict(fit_sp, data.frame(x=x_plot))
+    plot(x, y, 
+         xlab="Time (ms)", 
+         ylab="Acceleration (g)",
+         main="Linear spline")
+    lines(x_plot, y_hat_plot, col="#882255", lwd=2)
+    abline(v=x_knots, lty=3)
+    legend('topleft',paste0("# knots: ", nknots.slider), bty='n')
+  },
+  nknots.slider = slider(1,10,2,step=1,label='# knots'))
+

@@ -1,0 +1,50 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+library('MASS')
+library('manipulate')
+
+?mcycle
+
+y <- mcycle$accel
+x <- mcycle$times
+
+plot(x, y, 
+     xlab="Time (ms)",
+     ylab="Acceleration (g)")
+
+
+## local regression with Gaussian 'normal' kernel
+x_plot <- seq(min(x),max(x),length.out=1000)
+fit_ks <- ksmooth(x, y,
+                  kernel='normal',
+                  bandwidth = 10,
+                  x.points = x_plot)
+y_hat_plot <- fit_ks$y
+plot(x, y, 
+     xlab="Time (ms)", 
+     ylab="Acceleration (g)",
+     main="Local regression w/Gaussian kernel")
+lines(x_plot, y_hat_plot, col="#882255", lwd=2)
+legend('topleft',paste0("bandwidth = ", "10"), bty='n')
+
+
+## use manipulate to quickly see how 'bandwidth' affects fit
+manipulate({
+    x_plot <- seq(min(x),max(x),length.out=1000)
+    fit_ks <- ksmooth(x, y,
+                      kernel='normal',
+                      bandwidth = bandwidth.slider,
+                      x.points = x_plot)
+    y_hat_plot <- fit_ks$y
+    plot(x, y, 
+         xlab="Time (ms)", 
+         ylab="Acceleration (g)",
+         main="Local regression w/Gaussian kernel")
+    lines(x_plot, y_hat_plot, col="#882255", lwd=2)
+    legend('topleft',paste0("bandwidth = ", bandwidth.slider), bty='n')
+  },
+  bandwidth.slider = slider(1,20,5,label='bandwidth'))
+

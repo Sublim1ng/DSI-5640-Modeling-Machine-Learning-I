@@ -1,0 +1,44 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+library('MASS')
+library('manipulate')
+
+?mcycle
+
+y <- mcycle$accel
+x <- mcycle$times
+
+plot(x, y, 
+     xlab="Time (ms)",
+     ylab="Acceleration (g)")
+
+
+## smooth splines
+fit_ss <- smooth.spline(x, y, lambda=1)
+x_plot <- seq(min(x),max(x),length.out=1000)
+y_hat_plot <- predict(fit_ss, x_plot)$y
+plot(x, y, 
+     xlab="Time (ms)", 
+     ylab="Acceleration (g)",
+     main="Smoothing Spline Fit")
+lines(x_plot, y_hat_plot, col="#882255", lwd=2)
+legend('topleft',paste0("lambda = ", fit_ss$lambda), bty='n')
+
+
+## use manipulate to quickly see how 'lambda' affects fit
+manipulate({
+    fit_ss <- smooth.spline(x, y, lambda=lambda.slider)
+    x_plot <- seq(min(x),max(x),length.out=1000)
+    y_hat_plot <- predict(fit_ss, x_plot)$y
+    plot(x, y, 
+         xlab="Time (ms)", 
+         ylab="Acceleration (g)",
+         main="Smoothing Spline Fit")
+    lines(x_plot, y_hat_plot, col="#882255", lwd=2)
+    legend('topleft',paste0("lambda = ", fit_ss$lambda), bty='n')
+  },
+  lambda.slider = slider(0,0.01,1e-3,label='lambda'))
+
