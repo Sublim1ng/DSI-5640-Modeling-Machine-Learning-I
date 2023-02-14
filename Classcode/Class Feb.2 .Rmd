@@ -1,0 +1,116 @@
+library('splines')        ## for 'bs'
+library('dplyr')          ## for 'select', 'filter', and others
+library('magrittr')       ## for '%<>%' operator
+library('glmnet')         ## for 'glmnet'
+
+###  Linear regression examples ###
+
+## load prostate data
+prostate <- 
+  read.table(url(
+    'https://web.stanford.edu/~hastie/ElemStatLearn/datasets/prostate.data'))
+
+## split prostate into testing and training subsets
+prostate_train <- prostate %>%
+  filter(train == TRUE) %>% 
+  select(-train)
+
+prostate_test <- prostate %>%
+  filter(train == FALSE) %>% 
+  select(-train)
+
+x_train <- prostate_train %>%
+  select(-lcavol)
+
+x_test  <- prostate_test %>%
+  select(-lcavol)
+
+## principal components analysis
+pca_x_train <- princomp(x_train, cor = T)
+
+## predict() method transforms new 'x' to 'z'
+x_new <- data.frame(
+  lweight = 2.769459, 
+  age = 50L, 
+  lbph = -1.38629436, 
+  svi = 0L, 
+  lcp = -1.38629436, 
+  gleason = 6L, 
+  pgg45 = 0L, 
+  lpsa = -0.4307829
+)
+
+z_new <- predict(pca_x_train, newdata=x_new)
+z_new
+
+# pca loadings -- define linear combinations of X needed to calcluate each Z
+pca_x_train$loadings
+
+# transform X into Z 
+# each row/observation has 8 predictors, X, which are transformed (matrix multiplied) by the loading factors
+z_train <- pca_x_train$scores # dim(X) = dim(Z) = 67 x 8
+
+## x's are correlated, but z's are not
+heatmap(cor(x_train)[8:1,], Rowv=NA, Colv=NA, symm=T,
+        main='Correlation among inputs' )
+heatmap(cor(z_train)[8:1,], Rowv=NA, Colv=NA, symm=T,
+        main='Correlation among PCs')
+
+## variance of each PC (eigenvalues)
+plot(pca_x_train); pca_x_train$sdev^2
+sum(pca_x_train$sdev^2) # equal to number of predictors -- variances > 1 indicate greater than average variability explained
+summary(pca_x_train)
+
+## predict lcavol using all PCs
+yz_train <- data.frame(lcavol=prostate_train$lcavol, # outcome
+                       z_train) # PCs from training set
+yz_test  <- data.frame(lcavol=prostate_test$lcavol, # outcome
+                       predict(pca_x_train, x_test)) # get PCs on testing set by using the same rotation as on the training set
+fit <- lm(lcavol ~ ., data=yz_train) # regress outcome on PCs using training data to estimate coefficients for each PC
+summary(fit) # components 1,2,8 have relatively large positive associations, component 7 has a negative association
+
+# for comparison, can fit on original X dataset -- has same fit metrics
+summary(lm(lcavol ~ ., data=data.frame(lcavol=prostate_train$lcavol, x_train)))
+
+## functions to compute testing/training error w/lm
+L2_loss <- function(y, yhat)
+  (y-yhat)^2
+
+## functions to compute testing/training error with lm
+error <- function(dat, fit, loss=L2_loss) {
+  y_hat <- predict(fit, newdata=dat)
+  mean(loss(dat$lcavol, y_hat))
+}
+
+## train_error 
+error(yz_train, fit)
+
+## testing error 
+error(yz_test, fit)
+
+## fit with first 8:1 PCs
+# nPC = 0 leaves only the intercept
+pcr_fits <- lapply(8:0, function(nPC)
+  lm(lcavol ~ ., data=yz_train %>% select(c(1+0:nPC))))
+
+## compute training and testing errors as function of lambda
+err_train_1 <- sapply(pcr_fits, function(fit) 
+  error(yz_train, fit))
+err_test_1 <- sapply(pcr_fits, function(fit) 
+  error(yz_test, fit))
+
+## plot test/train error
+plot(x=range(8:0),
+     y=range(c(err_train_1, err_test_1)),
+     type='n',
+     xlab='# PCs used',
+     ylab='train/test error')
+points(8:0, err_train_1, pch=19, type='b', col='darkblue')
+points(8:0, err_test_1, pch=19, type='b', col='darkred')
+legend('topright', c('train','test'), lty=1, pch=19,
+       col=c('darkblue','darkred'), bty='n')
+
+data.frame(ncomp = 0:8, 
+           train.eror = round(rev(err_train_1),3),
+           test.error = round(rev(err_test_1),3))
+
