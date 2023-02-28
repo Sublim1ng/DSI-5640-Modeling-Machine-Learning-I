@@ -145,17 +145,17 @@ loss_squared_error <- function(y, yhat)
 error <- function(y, yhat, loss=loss_squared_error)
   mean(loss(y, yhat))
 
-train_error <- rep(NA, 50)
-for (i in 1:50){
+train_error <- rep(NA, 20)
+for (i in 1:20){
   yhat_train <- nadaraya_watson(mcycle_train$accel, x_train, x_train, kernel_k_nearest_neighbors, knn = i)
   train_error[i] <- error(mcycle_train$accel, yhat_train, loss = loss_squared_error)
 }
 
-plot(seq(1:50),train_error, xlab = "k", ylab = "training error")
+plot(seq(1:20),train_error, xlab = "k", ylab = "training error")
 ```
 
 ```{r}
-y = mcycle_train$times
+y = mcycle_train$accel
 x <- x_train
 
 ## AIC
@@ -178,7 +178,7 @@ yhat <- nadaraya_watson(y, x, x,
   kernel_epanechnikov, lambda=5)
 
 ## view kernel (smoother) matrix
-matrix_image(attr(yhat, 'k'))
+# matrix_image(attr(yhat, 'k'))
 
 ## compute effective degrees of freedom
 edf <- effective_df(y, x, kernel_epanechnikov, lambda=5)
@@ -187,37 +187,37 @@ bic(y, yhat, edf)
 ```
 
 ```{r}
-aic_error <- rep(NA, 50)
-for(i in 1:50){
+aic_error <- rep(NA, 20)
+for(i in 1:20){
   yhat_train <- nadaraya_watson(mcycle_train$accel, x_train, x_train,kernel_k_nearest_neighbors, knn=i)
   edf <- effective_df(y, x, kernel_k_nearest_neighbors, knn=i)
   aic_error[i] <-  aic(y, yhat_train, edf)
 }
 print(aic_error)
-plot(seq(1:50), aic_error, xlab = 'k',ylab = 'AIC')
+plot(seq(1:20), aic_error, xlab = 'k',ylab = 'AIC')
 ```
 
 ```{r}
-bic_error <- rep(NA, 50)
-for(i in 1:50){
+bic_error <- rep(NA, 20)
+for(i in 1:20){
   yhat_train <- nadaraya_watson(mcycle_train$accel, x_train, x_train,kernel_k_nearest_neighbors, knn=i)
   edf <- effective_df(y, x, kernel_k_nearest_neighbors, knn=i)
   bic_error[i] <- bic(y, yhat_train, edf)
 }
 print(bic_error)
-plot(seq(1:50), bic_error, xlab = 'k',ylab = 'BIC')
+plot(seq(1:20), bic_error, xlab = 'k',ylab = 'BIC')
 ```
 
 ```{r}
-valid_error <- rep(NA, 50)
-for(i in 1:50){
+valid_error <- rep(NA, 20)
+for(i in 1:20){
   yhat_valid <- nadaraya_watson(mcycle_test$accel, x_valid, x_valid,kernel_k_nearest_neighbors, knn=i)
   valid_error[i] <-  error(mcycle_test$accel,yhat_valid)
 }
 
 #Error
 #training error
-plot(seq(1:50), valid_error, xlab = 'k', ylab = 'testing error')
+plot(seq(1:20), valid_error, xlab = 'k', ylab = 'testing error')
 ```
 
 ```{r}
@@ -284,20 +284,20 @@ cvknnreg <- function(kNN = 10, flds=mcycle_flds) {
   return(cverr)
 }
 
-## Compute 5-fold CV for kNN = 1:50
-cverrs <- sapply(1:50, cvknnreg)
-print(cverrs) ## rows are k-folds (1:5), cols are kNN (1:50)
+## Compute 5-fold CV for kNN = 1:20
+cverrs <- sapply(1:20, cvknnreg)
+print(cverrs) ## rows are k-folds (1:5), cols are kNN (1:20)
 cverrs_mean <- apply(cverrs, 2, mean)
 cverrs_sd   <- apply(cverrs, 2, sd)
 ```
 
 ## Plot the CV-estimated test error (average of the five estimates from each fold) as a function of the tuning parameter. Add vertical line segments to the figure (using the segments function in R) that represent one “standard error” of the CV-estimated test error (standard deviation of the five estimates from each fold).
 ```{r}
-## Plot the results of 5-fold CV for kNN = 1:50
-plot(x=1:50, y=cverrs_mean, 
+## Plot the results of 5-fold CV for kNN = 1:20
+plot(x=1:20, y=cverrs_mean, 
      ylim=range(cverrs),
      xlab="'k' in kNN", ylab="CV Estimate of Test Error")
-segments(x0=1:50, x1=1:50,
+segments(x0=1:20, x1=1:20,
          y0=cverrs_mean-cverrs_sd,
          y1=cverrs_mean+cverrs_sd)
 best_idx <- which.min(cverrs_mean)
@@ -306,8 +306,7 @@ abline(h=cverrs_mean[best_idx] + cverrs_sd[best_idx], lty=3)
 ```
 
 ## Interpret the resulting figures and select a suitable value for the tuning parameter.
-**As we can see in the plot above, when k = 6, the model has the lowest test error. However, when you look at the cverrs_mean and cverrs_sd, we find that, when k = 4, it has the lowest standard deviation 134.9745, its test error is also low. As a result, I think k = 4 may be a suitable value for the tuning parameter.**
-
+**As we can see in the plot above, when k = 6, the model has the lowest test error. However, if k = 6, the model is kind of complex. Since the test errors are close when k = 6 to k = 15. I may take a middle one say that the suitable value is k = 10.
 
 
 
