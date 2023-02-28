@@ -1,0 +1,225 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+library('rgl')
+library('class')
+
+load(url("http://statweb.stanford.edu/~tibs/ElemStatLearn/datasets/ESL.mixture.rda"))
+dat <- ESL.mixture
+
+## create 3D graphic, rotate to view 2D x1/x2 projection
+par3d(FOV=1,userMatrix=diag(4))
+plot3d(dat$xnew[,1], dat$xnew[,2], dat$prob, type="n",
+       xlab="x1", ylab="x2", zlab="",
+       axes=FALSE, box=TRUE, aspect=1)
+
+## plot points and bounding box
+x1r <- range(dat$px1)
+x2r <- range(dat$px2)
+pts <- plot3d(dat$x[,1], dat$x[,2], 1,
+              type="p", radius=0.5, add=TRUE,
+              col=ifelse(dat$y, "orange", "blue"))
+lns <- lines3d(x1r[c(1,2,2,1,1)], x2r[c(1,1,2,2,1)], 1)
+
+## draw Bayes (True) classification boundary
+dat$probm <- with(dat, matrix(prob, length(px1), length(px2)))
+dat$cls <- with(dat, contourLines(px1, px2, probm, levels=0.5))
+pls <- lapply(dat$cls, function(p) lines3d(p$x, p$y, z=1))
+
+## plot marginal probability surface and decision plane
+sfc <- surface3d(dat$px1, dat$px2, dat$prob, alpha=1.0,
+                 color="gray", specular="gray")
+qds <- quads3d(x1r[c(1,2,2,1)], x2r[c(1,1,2,2)], 0.5, alpha=0.4,
+               color="gray", lit=FALSE)
+
+## clear the surface, decision plane, and decision boundary
+par3d(userMatrix=diag(4)); pop3d(id=sfc); pop3d(id=qds)
+for(pl in pls) pop3d(id=pl)
+
+
+##### k-NN #####
+## use 15-NN to estimate probability of class assignment
+preds.knn <- knn(train=dat$x, test=dat$xnew, cl=dat$y, k=15, prob=TRUE)
+probs.knn <- attr(preds.knn, 'prob')
+probs.knn <- ifelse(preds.knn == 1, probs.knn, 1-probs.knn)
+dat$probm.knn <- with(dat, matrix(probs.knn, length(px1), length(px2)))
+dat$cls.knn <- with(dat, contourLines(px1, px2, probm.knn, levels=0.5))
+
+## plot classification boundary
+pls <- lapply(dat$cls.knn, function(p) lines3d(p$x, p$y, z=1))
+
+## plot probability surface and decision plane
+sfc <- surface3d(dat$px1, dat$px2, probs.knn, alpha=1.0,
+                 color="gray", specular="gray")
+qds <- quads3d(x1r[c(1,2,2,1)], x2r[c(1,1,2,2)], 0.5, alpha=0.4,
+               color="gray", lit=FALSE)
+
+## clear the surface, decision plane, and decision boundary
+par3d(userMatrix=diag(4)); pop3d(id=sfc); pop3d(id=qds)
+for(pl in pls) pop3d(id=pl)
+
+## use 1-NN to estimate probability of class assignment
+preds.knn <- knn(train=dat$x, test=dat$xnew, cl=dat$y, k=1, prob=TRUE)
+probs.knn <- attr(preds.knn, 'prob')
+probs.knn <- ifelse(preds.knn == 1, probs.knn, 1-probs.knn)
+dat$probm.knn <- with(dat, matrix(probs.knn, length(px1), length(px2)))
+dat$cls.knn <- with(dat, contourLines(px1, px2, probm.knn, levels=0.5))
+
+## plot classification boundary
+pls <- lapply(dat$cls.knn, function(p) lines3d(p$x, p$y, z=1))
+
+## plot probability surface and decision plane
+sfc <- surface3d(dat$px1, dat$px2, probs.knn, alpha=1.0,
+                 color="gray", specular="gray")
+qds <- quads3d(x1r[c(1,2,2,1)], x2r[c(1,1,2,2)], 0.5, alpha=0.4,
+               color="gray", lit=FALSE)
+
+## clear the surface, decision plane, and decision boundary
+par3d(userMatrix=diag(4)); pop3d(id=sfc); pop3d(id=qds)
+for(pl in pls) pop3d(id=pl)
+
+
+## use linear LS to estimate probability of class assignment
+ddat <- data.frame(y=dat$y, x1=dat$x[,1], x2=dat$x[,2])
+fit.lin <- lm(y ~ x1 + x2, data=ddat)
+probs.lin <- predict(fit.lin, data.frame(x1=dat$xnew[,1],x2=dat$xnew[,2]))
+dat$probm.lin <- with(dat, matrix(probs.lin, length(px1), length(px2)))
+dat$cls.lin <- with(dat, contourLines(px1, px2, probm.lin, levels=0.5))
+
+## plot classification boundary
+pls <- lapply(dat$cls.lin, function(p) lines3d(p$x, p$y, z=1))
+
+## plot probability surface and decision plane
+sfc <- surface3d(dat$px1, dat$px2, probs.lin, alpha=1.0,
+                 color="gray", specular="gray")
+qds <- quads3d(x1r[c(1,2,2,1)], x2r[c(1,1,2,2)], 0.5, alpha=0.4,
+               color="gray", lit=FALSE)
+
+## clear the surface, decision plane, and decision boundary
+par3d(userMatrix=diag(4)); pop3d(id=sfc); pop3d(id=qds)
+for(pl in pls) pop3d(id=pl)
+
+##### Local contstant #####
+## compute probabilities plot classification boundary
+## associated with local constant kernal method
+## lambda = 1
+ddat <- data.frame(y=dat$y, x1=dat$x[,1], x2=dat$x[,2])
+probs.loc0 <- 
+  apply(dat$xnew, 1, function(x0) {
+    ## smoothing parameter
+    l <- 1
+    ## compute (Gaussian) kernel weights
+    d <- colSums((rbind(ddat$x1, ddat$x2) - x0)^2)
+    k <- exp(-d/2/l^2)
+    ## local fit at x0
+    fit <- lm(y ~ 1, data=ddat, weights=k)
+    ## predict at x0
+    as.numeric(predict(fit, newdata=as.data.frame(t(x0))))
+  })
+
+dat$probm.loc0 <- with(dat, matrix(probs.loc0, length(px1), length(px2)))
+dat$cls.loc0 <- with(dat, contourLines(px1, px2, probm.loc0, levels=0.5))
+pls <- lapply(dat$cls.loc0, function(p) lines3d(p$x, p$y, z=1))
+
+## plot probability surface and decision plane
+sfc <- surface3d(dat$px1, dat$px2, probs.loc0, alpha=1.0,
+                 color="gray", specular="gray")
+qds <- quads3d(x1r[c(1,2,2,1)], x2r[c(1,1,2,2)], 0.5, alpha=0.4,
+               color="gray", lit=FALSE)
+
+## clear the surface, decision plane, and decision boundary
+par3d(userMatrix=diag(4)); pop3d(id=sfc); pop3d(id=qds)
+for(pl in pls) pop3d(id=pl)
+
+## compute probabilities plot classification boundary
+## associated with local constant kernal method
+## lambda = 0.5
+ddat <- data.frame(y=dat$y, x1=dat$x[,1], x2=dat$x[,2])
+probs.loc0 <- 
+  apply(dat$xnew, 1, function(x0) {
+    ## smoothing parameter
+    l <- 0.5
+    ## compute (Gaussian) kernel weights
+    d <- colSums((rbind(ddat$x1, ddat$x2) - x0)^2)
+    k <- exp(-d/2/l^2)
+    ## local fit at x0
+    fit <- lm(y ~ 1, data=ddat, weights=k)
+    ## predict at x0
+    as.numeric(predict(fit, newdata=as.data.frame(t(x0))))
+  })
+
+dat$probm.loc0 <- with(dat, matrix(probs.loc0, length(px1), length(px2)))
+dat$cls.loc0 <- with(dat, contourLines(px1, px2, probm.loc0, levels=0.5))
+pls <- lapply(dat$cls.loc0, function(p) lines3d(p$x, p$y, z=1))
+
+## plot probability surface and decision plane
+sfc <- surface3d(dat$px1, dat$px2, probs.loc0, alpha=1.0,
+                 color="gray", specular="gray")
+qds <- quads3d(x1r[c(1,2,2,1)], x2r[c(1,1,2,2)], 0.5, alpha=0.4,
+               color="gray", lit=FALSE)
+
+## draw Bayes (True) classification boundary
+dat$probm <- with(dat, matrix(prob, length(px1), length(px2)))
+dat$cls <- with(dat, contourLines(px1, px2, probm, levels=0.5))
+pls2 <- lapply(dat$cls, function(p) lines3d(p$x, p$y, z=1, col='purple'))
+
+## clear the surface, decision plane, and decision boundaries
+par3d(userMatrix=diag(4)); pop3d(id=sfc); pop3d(id=qds)
+for(pl in pls) pop3d(id=pl)
+for(pl in pls2) pop3d(id=pl)
+
+## kernel density classification
+## compute kernel density estimates for each class
+dens.kde <- 
+  lapply(unique(ddat$y), function(uy) {
+    apply(dat$xnew, 1, function(x0) {
+      ## subset to current class
+      dsub <- subset(ddat, y==uy)
+      ## smoothing parameter (bandwidth; implies 2x2 diagonal)
+      l <- 1/2
+      ## kernel density estimate at x0
+      mean(dnorm(dsub$x1-x0[1], 0, l)*dnorm(dsub$x2-x0[2], 0, l))
+    })
+  })
+
+## plot the KDE for each class
+scale_zero_one <- function(x) {
+  rngx <- range(x, na.rm=TRUE)
+  (x-rngx[1])/diff(rngx)
+}
+sfc_1 <- surface3d(dat$px1, dat$px2, scale_zero_one(dens.kde[[1]]), alpha=1.0,
+                   color="blue", specular="blue")
+sfc_2 <- surface3d(dat$px1, dat$px2, scale_zero_one(dens.kde[[2]]), alpha=1.0,
+                   color="orange", specular="orange")
+pop3d(id=sfc_1); pop3d(id=sfc_2);
+
+## compute prior for each class (sample proportion)
+prir.kde <- table(ddat$y)/length(dat$y)
+
+## compute posterior probability Pr(y=1|x)
+probs.kde <- prir.kde[2]*dens.kde[[2]]/
+  (prir.kde[1]*dens.kde[[1]]+prir.kde[2]*dens.kde[[2]])
+
+## plot classification boundary associated
+## with kernel density classification
+dat$probm.kde <- with(dat, matrix(probs.kde, length(px1), length(px2)))
+dat$cls.kde <- with(dat, contourLines(px1, px2, probm.kde, levels=0.5))
+pls <- lapply(dat$cls.kde, function(p) lines3d(p$x, p$y, z=1))
+
+## plot probability surface and decision plane
+sfc <- surface3d(dat$px1, dat$px2, probs.kde, alpha=1.0,
+                 color="gray", specular="gray")
+qds <- quads3d(x1r[c(1,2,2,1)], x2r[c(1,1,2,2)], 0.5, alpha=0.4,
+               color="gray", lit=FALSE)
+
+## draw Bayes (True) classification boundary
+dat$probm <- with(dat, matrix(prob, length(px1), length(px2)))
+dat$cls <- with(dat, contourLines(px1, px2, probm, levels=0.5))
+pls2 <- lapply(dat$cls, function(p) lines3d(p$x, p$y, z=1, lty=2, color="purple"))
+
+
+
+
+

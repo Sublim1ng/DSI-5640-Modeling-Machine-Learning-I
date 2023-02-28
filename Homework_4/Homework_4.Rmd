@@ -1,0 +1,313 @@
+---
+title: "Homework_4"
+author: Ningyu Han
+output: github_document
+date: "2023-02-27"
+---
+
+```{r}
+library('MASS') ## for 'mcycle'
+library('manipulate') ## for 'manipulate'
+library('manipulate')
+library('splines') ## 'ns'
+library('caret') ## 'knnreg' and 'createFolds'
+```
+
+```{r}
+y <- mcycle$accel
+x <- matrix(mcycle$times, length(mcycle$times), 1)
+
+plot(x, y, xlab="Time (ms)", ylab="Acceleration (g)")
+```
+
+## Randomly split the mcycle data into training (75%) and validation (25%) subsets.
+```{r}
+dat <- mcycle
+set.seed(123)
+
+n <- nrow(dat)
+train_indices <- sample(1:n, round(0.75*n), replace = FALSE)
+mcycle_train <- mcycle[train_indices, ]
+mcycle_test <- mcycle[-train_indices, ]
+```
+
+```{r}
+y_valid <- mcycle_test$accel
+x_valid <- matrix(mcycle_test$times, length(mcycle_test$times), 1)
+
+plot(x_valid, y_valid, xlab="Time (ms)", ylab="Acceleration (g)")
+```
+
+## Using the mcycle data, consider predicting the mean acceleration as a function of time. Use the Nadaraya-Watson method with the k-NN kernel function to create a series of prediction models by varying the tuning parameter over a sequence of values. (hint: the script already implements this)
+```{r}
+## Epanechnikov kernel function
+## x  - n x p matrix of training inputs
+## x0 - 1 x p input where to make prediction
+## lambda - bandwidth (neighborhood size)
+kernel_epanechnikov <- function(x, x0, lambda=1) {
+  d <- function(t)
+    ifelse(t <= 1, 3/4*(1-t^2), 0)
+  z <- t(t(x) - x0)
+  d(sqrt(rowSums(z*z))/lambda)
+}
+```
+
+```{r}
+## k-NN kernel function
+## x  - n x p matrix of training inputs
+## x0 - 1 x p input where to make prediction
+## k  - number of nearest neighbors
+kernel_k_nearest_neighbors <- function(x, x0, knn=1) {
+  ## compute distance betwen each x and x0
+  z <- t(t(x) - x0)
+  d <- sqrt(rowSums(z*z))
+
+  ## initialize kernel weights to zero
+  w <- rep(0, length(d))
+  
+  ## set weight to 1 for k nearest neighbors
+  w[order(d)[1:knn]] <- 1
+  
+  return(w)
+}
+```
+
+```{r}
+## Make predictions using the NW method
+## y  - n x 1 vector of training outputs
+## x  - n x p matrix of training inputs
+## x0 - m x p matrix where to make predictions
+## kern  - kernel function to use
+## ... - arguments to pass to kernel function
+nadaraya_watson <- function(y, x, x0, kern, ...) {
+  k <- t(apply(x0, 1, function(x0_) {
+    k_ <- kern(x, x0_, ...)
+    k_/sum(k_)
+  }))
+  yhat <- drop(k %*% y)
+  attr(yhat, 'k') <- k
+  return(yhat)
+}
+
+yhat <- nadaraya_watson(y, x, x,kernel_k_nearest_neighbors, knn=1)
+```
+
+```{r}
+## Helper function to view kernel (smoother) matrix
+matrix_image <- function(x) {
+  rot <- function(x) t(apply(x, 2, rev))
+  cls <- rev(gray.colors(20, end=1))
+  image(rot(x), col=cls, axes=FALSE)
+  xlb <- pretty(1:ncol(x))
+  xat <- (xlb-0.5)/ncol(x)
+  ylb <- pretty(1:nrow(x))
+  yat <- (ylb-0.5)/nrow(x)
+  axis(3, at=xat, labels=xlb)
+  axis(2, at=yat, labels=ylb)
+  mtext('Rows', 2, 3)
+  mtext('Columns', 3, 3)
+}
+
+matrix_image(attr(yhat, 'k'))
+```
+
+## With the squared-error loss function, compute and plot the training error, AIC, BIC, and validation error (using the validation data) as functions of the tuning parameter.
+```{r}
+## Compute effective df using NW method
+## y  - n x 1 vector of training outputs
+## x  - n x p matrix of training inputs
+## kern  - kernel function to use
+## ... - arguments to pass to kernel function
+effective_df <- function(y, x, kern, ...) {
+  y_hat <- nadaraya_watson(y, x, x,
+    kern=kern, ...)
+  sum(diag(attr(y_hat, 'k')))
+}
+```
+
+```{r}
+x_train = matrix(mcycle_train$times, length(mcycle_train$times), 1)
+yhat_train = nadaraya_watson(mcycle_train$accel, x_train, x_train, kernel_k_nearest_neighbors, knn=1)
+```
+
+```{r}
+## loss function
+## y    - train/test y
+## yhat - predictions at train/test x
+  
+loss_squared_error <- function(y, yhat)
+  (y - yhat)^2
+
+## test/train error
+## y    - train/test y
+## yhat - predictions at train/test x
+## loss - loss function
+error <- function(y, yhat, loss=loss_squared_error)
+  mean(loss(y, yhat))
+
+train_error <- rep(NA, 50)
+for (i in 1:50){
+  yhat_train <- nadaraya_watson(mcycle_train$accel, x_train, x_train, kernel_k_nearest_neighbors, knn = i)
+  train_error[i] <- error(mcycle_train$accel, yhat_train, loss = loss_squared_error)
+}
+
+plot(seq(1:50),train_error, xlab = "k", ylab = "training error")
+```
+
+```{r}
+y = mcycle_train$times
+x <- x_train
+
+## AIC
+## y    - training y
+## yhat - predictions at training x
+## d    - effective degrees of freedom
+aic <- function(y, yhat, d)
+  error(y, yhat) + 2/length(y)*d
+
+## BIC
+## y    - training y
+## yhat - predictions at training x
+## d    - effective degrees of freedom
+
+bic <- function(y, yhat, d)
+  error(y, yhat) + log(length(y))/length(y)*d
+
+## make predictions using NW method at training inputs
+yhat <- nadaraya_watson(y, x, x,
+  kernel_epanechnikov, lambda=5)
+
+## view kernel (smoother) matrix
+matrix_image(attr(yhat, 'k'))
+
+## compute effective degrees of freedom
+edf <- effective_df(y, x, kernel_epanechnikov, lambda=5)
+aic(y, yhat, edf)
+bic(y, yhat, edf)
+```
+
+```{r}
+aic_error <- rep(NA, 50)
+for(i in 1:50){
+  yhat_train <- nadaraya_watson(mcycle_train$accel, x_train, x_train,kernel_k_nearest_neighbors, knn=i)
+  edf <- effective_df(y, x, kernel_k_nearest_neighbors, knn=i)
+  aic_error[i] <-  aic(y, yhat_train, edf)
+}
+print(aic_error)
+plot(seq(1:50), aic_error, xlab = 'k',ylab = 'AIC')
+```
+
+```{r}
+bic_error <- rep(NA, 50)
+for(i in 1:50){
+  yhat_train <- nadaraya_watson(mcycle_train$accel, x_train, x_train,kernel_k_nearest_neighbors, knn=i)
+  edf <- effective_df(y, x, kernel_k_nearest_neighbors, knn=i)
+  bic_error[i] <- bic(y, yhat_train, edf)
+}
+print(bic_error)
+plot(seq(1:50), bic_error, xlab = 'k',ylab = 'BIC')
+```
+
+```{r}
+valid_error <- rep(NA, 50)
+for(i in 1:50){
+  yhat_valid <- nadaraya_watson(mcycle_test$accel, x_valid, x_valid,kernel_k_nearest_neighbors, knn=i)
+  valid_error[i] <-  error(mcycle_test$accel,yhat_valid)
+}
+
+#Error
+#training error
+plot(seq(1:50), valid_error, xlab = 'k', ylab = 'testing error')
+```
+
+```{r}
+## create a grid of inputs 
+x_plot <- matrix(seq(min(x),max(x),length.out=100),100,1)
+
+## make predictions using NW method at each of grid points
+y_hat_plot <- nadaraya_watson(y, x, x_plot,
+  kernel_epanechnikov, lambda=1)
+
+## plot predictions
+plot(x, y, xlab="Time (ms)", ylab="Acceleration (g)")
+lines(x_plot, y_hat_plot, col="#882255", lwd=2) 
+```
+
+```{r}
+# # how does k affect shape of predictor and eff. df using k-nn kernel ?
+# manipulate({
+#   ## make predictions using NW method at training inputs
+#   y_hat <- nadaraya_watson(y, x, x,
+#     kern=kernel_k_nearest_neighbors, k=k_slider)
+#   edf <- effective_df(y, x,
+#     kern=kernel_k_nearest_neighbors, k=k_slider)
+#   aic_ <- aic(y, y_hat, edf)
+#   bic_ <- bic(y, y_hat, edf)
+#   y_hat_plot <- nadaraya_watson(y, x, x_plot,
+#     kern=kernel_k_nearest_neighbors, k=k_slider)
+#   plot(x, y, xlab="Time (ms)", ylab="Acceleration (g)")
+#   legend('topright', legend = c(
+#     paste0('eff. df = ', round(edf,1)),
+#     paste0('aic = ', round(aic_, 1)),
+#     paste0('bic = ', round(bic_, 1))),
+#     bty='n')
+#   lines(x_plot, y_hat_plot, col="#882255", lwd=2)
+# }, k_slider=slider(1, 10, initial=3, step=1))
+```
+
+## For each value of the tuning parameter, Perform 5-fold cross-validation using the combined training and validation data. This results in 5 estimates of test error per tuning parameter value.
+```{r}
+## 5-fold cross-validation of knnreg model
+## create five folds
+set.seed(1985)
+mcycle_flds  <- createFolds(mcycle$times, k=5)
+print(mcycle_flds)
+
+sapply(mcycle_flds, length)  ## not all the same length
+
+cvknnreg <- function(kNN = 10, flds=mcycle_flds) {
+  cverr <- rep(NA, length(flds))
+  for(tst_idx in 1:length(flds)) { ## for each fold
+    
+    ## get training and testing data
+    mcycle_trn <- mcycle[-flds[[tst_idx]],]
+    mcycle_tst <- mcycle[ flds[[tst_idx]],]
+    
+    ## fit kNN model to training data
+    knn_fit <- knnreg(accel ~ times,
+                      k=kNN, data=mcycle_trn)
+    
+    ## compute test error on testing data
+    pre_tst <- predict(knn_fit, mcycle_tst)
+    cverr[tst_idx] <- mean((mcycle_tst$accel - pre_tst)^2)
+  }
+  return(cverr)
+}
+
+## Compute 5-fold CV for kNN = 1:50
+cverrs <- sapply(1:50, cvknnreg)
+print(cverrs) ## rows are k-folds (1:5), cols are kNN (1:50)
+cverrs_mean <- apply(cverrs, 2, mean)
+cverrs_sd   <- apply(cverrs, 2, sd)
+```
+
+## Plot the CV-estimated test error (average of the five estimates from each fold) as a function of the tuning parameter. Add vertical line segments to the figure (using the segments function in R) that represent one “standard error” of the CV-estimated test error (standard deviation of the five estimates from each fold).
+```{r}
+## Plot the results of 5-fold CV for kNN = 1:50
+plot(x=1:50, y=cverrs_mean, 
+     ylim=range(cverrs),
+     xlab="'k' in kNN", ylab="CV Estimate of Test Error")
+segments(x0=1:50, x1=1:50,
+         y0=cverrs_mean-cverrs_sd,
+         y1=cverrs_mean+cverrs_sd)
+best_idx <- which.min(cverrs_mean)
+points(x=best_idx, y=cverrs_mean[best_idx], pch=20)
+abline(h=cverrs_mean[best_idx] + cverrs_sd[best_idx], lty=3)
+```
+
+## Interpret the resulting figures and select a suitable value for the tuning parameter.
+**As we can see in the plot above, when k = 6, the model has the lowest test error. However, when you look at the cverrs_mean and cverrs_sd, we find that, when k = 4, it has the lowest standard deviation 134.9745, its test error is also low. As a result, I think k = 4 may be a suitable value for the tuning parameter.**
+
+
+
+

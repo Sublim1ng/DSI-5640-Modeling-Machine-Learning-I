@@ -1,0 +1,128 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+library('MASS') ## for 'mcycle'
+library('manipulate') ## for 'manipulate'
+
+require(splines)
+require(stats)
+require(graphics)
+
+y <- mcycle$accel
+x <- mcycle$times
+
+plot(x, y, xlab="Time (ms)", ylab="Acceleration (g)")
+
+## x  - n x p matrix of training inputs
+## x0 - 1 x p input where to make prediction
+## lambda - bandwidth (neighborhood size)
+kernel_epanechnikov <- function(x, x0, lambda=1) {
+  d <- function(t)
+    ifelse(t <= 1, 3/4*(1-t^2), 0)
+  z <- t(t(x) - x0)
+  d(sqrt(rowSums(z*z))/lambda)
+}
+
+kernel_k_nearest_neighbors <- function(x, x0, k=1) {
+  ## compute distance betwen each x and x0
+  z <- t(t(x) - x0)
+  d <- sqrt(rowSums(z*z))
+  
+  ## initialize kernel weights to zero
+  w <- rep(0, length(d))
+  
+  ## set weight to 1 for k nearest neighbors
+  w[order(d)[1:k]] <- 1
+  
+  return(w)
+}
+
+## y  - n x 1 vector of training outputs
+## x  - n x p matrix of training inputs
+## x0 - m x p matrix where to make predictions
+## kern  - kernel function to use
+## ... - arguments to pass to kernel function
+nadaraya_watson <- function(y, x, x0, kern, ...) {
+  apply(x0, 1, function(x0_) {
+    k <- kern(x, x0_, ...)
+    sum(k*y)/sum(k)
+  })
+}
+
+## create a grid of inputs 
+x_plot <- matrix(seq(min(x),max(x),length.out=100),100,1)
+
+## make predictions using NW method at each of grid points
+y_hat_plot <- nadaraya_watson(y, x, x_plot,
+  kernel_epanechnikov, lambda=1)
+
+## plot predictions
+plot(x, y, xlab="Time (ms)", ylab="Acceleration (g)")
+lines(x_plot, y_hat_plot, col="#882255", lwd=2) 
+
+## how does lambda affect shape of predictor?
+manipulate({
+  y_hat_plot <- nadaraya_watson(y, x, x_plot,
+    kern=kernel_epanechnikov, lambda=lambda_slider)
+  plot(x, y, xlab="Time (ms)", ylab="Acceleration (g)")
+  lines(x_plot, y_hat_plot, col="#882255", lwd=2) 
+}, lambda_slider=slider(0.1, 100, initial=1))
+
+## how does k affect shape of predictor using k-nn kernel?
+manipulate({
+  y_hat_plot <- nadaraya_watson(y, x, x_plot,
+    kern=kernel_k_nearest_neighbors, k=k_slider)
+  plot(x, y, xlab="Time (ms)", ylab="Acceleration (g)")
+  lines(x_plot, y_hat_plot, col="#882255", lwd=2) 
+}, k_slider=slider(1, 100, initial=1, step=1))
+
+## local constant and local linear using 'lm'
+local_linear <- function(y, x, x0, form=y~1, kern, ...) {
+  apply(x0, 1, function(x0_) {
+    w <- kern(x, x0_, ...)
+    dat <- data.frame(y=y,x=x,w=w)
+    fit <- lm(formula=form, weights=w, data=dat)
+    suppressWarnings(predict(fit, data.frame(x=x0_)))
+  })
+}
+
+## Show NW (local constant) vs. local linear
+y_hat_plot <- local_linear(y, x, x_plot,
+    form = y ~ 1,
+    kern = kernel_epanechnikov,
+    lambda = 5)
+plot(x, y, xlab="Time (ms)", ylab="Acceleration (g)")
+lines(x_plot, y_hat_plot, col="#882255", lwd=2) 
+y_hat_plot <- nadaraya_watson(y, x, x_plot, 
+    kern = kernel_epanechnikov,
+    lambda = 5)
+lines(x_plot, y_hat_plot, col="yellow", lwd=2, lty=2) 
+
+y_hat_plot <- local_linear(y, x, x_plot,
+    form = y ~ x,
+    kern = kernel_epanechnikov,
+    lambda = 5)
+lines(x_plot, y_hat_plot, col="darkgreen", lwd=2, lty=1) 
+legend('topleft', bty='n', lwd=2,
+  legend=c('NW','local constant', 'local linear'),
+  col=c('yellow', '#882255', 'darkgreen'))
+
+## local quadratic model
+y_hat_plot <- local_linear(y, x, x_plot,
+    form = y ~ poly(x, 2),
+    kern = kernel_epanechnikov,
+    lambda = 5)
+plot(x, y, xlab="Time (ms)", ylab="Acceleration (g)")
+lines(x_plot, y_hat_plot, col="#882255", lwd=2, lty=1)
+
+## local natural cubic splines model
+y_hat_plot <- local_linear(y, x, x_plot,
+    form = y ~ ns(x, 3),
+    kern = kernel_epanechnikov,
+    lambda = 5)
+plot(x, y, xlab="Time (ms)", ylab="Acceleration (g)")
+lines(x_plot, y_hat_plot, col="#882255", lwd=2, lty=1)
+
+

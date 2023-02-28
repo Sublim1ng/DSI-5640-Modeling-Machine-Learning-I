@@ -1,0 +1,129 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+library('manipulate')
+library('splines') ## 'ns'
+library('caret') ## 'knnreg' and 'createFolds'
+
+
+## Download Income data
+inc <- read.csv("Classcode/Income2.csv")
+
+## Function to plot income data and regression function ('fun')
+plot_inc_data <- function(fun = function(x1, x2) x1*x2, grid=15, dat = inc) {
+  ## create x,y,z data for 'persp'
+  xr <- range(dat$Education)
+  xs <- seq(xr[1], xr[2], length.out=grid)
+  yr <- range(dat$Seniority)
+  ys <- seq(yr[1], yr[2], length.out=grid)
+  z  <- outer(xs, ys, fun)
+  ## use 'manipulate' to interact with view of 3D graphic
+  manipulate({
+    ## create the 3D plot, store the view information
+    tx <- persp(xs, ys, z, zlim=range(c(z,dat$Income)),
+                theta=theta_slider,phi=phi_slider,
+                xlab="Education", ylab="Seniority", zlab="Income")
+    
+    ## translate 3D data so that they can be plotted in the current 3d view
+    pt <- trans3d(dat$Education, dat$Seniority, dat$Income, pmat=tx)
+    
+    ## add the points to the plot
+    points(pt, pch=20, col='red')
+  }, theta_slider=slider(0, 90, 35), phi_slider=slider(0, 90, 40))
+}
+
+## Additive natural cubic splines using least squares
+ls_fit <- lm(Income ~ ns(Education,3) + ns(Seniority,3), data=inc)
+ls_fun <- function(x1, x2, fit=ls_fit) 
+  predict(fit, data.frame(Education=x1, Seniority=x2))
+plot_inc_data(ls_fun)
+
+## k-nearest neighbors regression: 'caret::knnreg' function
+knn_fit <- knnreg(Income ~ Education + Seniority, k=5, data=inc)
+knn_fun <- function(x1, x2, fit=knn_fit) 
+  predict(fit, data.frame(Education=x1, Seniority=x2))
+plot_inc_data(knn_fun)
+
+## 5-fold cross-validation of knnreg model
+## create five folds
+set.seed(1985)
+inc_flds  <- createFolds(inc$Income, k=5)
+print(inc_flds)
+sapply(inc_flds, length)  ## not all the same length
+
+cvknnreg <- function(kNN = 10, flds=inc_flds) {
+  cverr <- rep(NA, length(flds))
+  for(tst_idx in 1:length(flds)) { ## for each fold
+    
+    ## get training and testing data
+    inc_trn <- inc[-flds[[tst_idx]],]
+    inc_tst <- inc[ flds[[tst_idx]],]
+    
+    ## fit kNN model to training data
+    knn_fit <- knnreg(Income ~ Education + Seniority,
+                      k=kNN, data=inc_trn)
+    
+    ## compute test error on testing data
+    pre_tst <- predict(knn_fit, inc_tst)
+    cverr[tst_idx] <- mean((inc_tst$Income - pre_tst)^2)
+  }
+  return(cverr)
+}
+
+## Compute 5-fold CV for kNN = 1:20
+cverrs <- sapply(1:20, cvknnreg)
+print(cverrs) ## rows are k-folds (1:5), cols are kNN (1:20)
+cverrs_mean <- apply(cverrs, 2, mean)
+cverrs_sd   <- apply(cverrs, 2, sd)
+
+## Plot the results of 5-fold CV for kNN = 1:20
+plot(x=1:20, y=cverrs_mean, 
+     ylim=range(cverrs),
+     xlab="'k' in kNN", ylab="CV Estimate of Test Error")
+segments(x0=1:20, x1=1:20,
+         y0=cverrs_mean-cverrs_sd,
+         y1=cverrs_mean+cverrs_sd)
+best_idx <- which.min(cverrs_mean)
+points(x=best_idx, y=cverrs_mean[best_idx], pch=20)
+abline(h=cverrs_mean[best_idx] + cverrs_sd[best_idx], lty=3)
+
+## bootstrap validation of knnreg model
+bootknnreg <- function(kNN = 10, B=100) {
+  berrs <- replicate(B, {
+    
+    ## resample the data
+    inc_boo <- inc[sample(nrow(inc), replace=T),]
+    
+    ## fit kNN model to training data
+    knn_fit <- knnreg(Income ~ Education + Seniority,
+                      k=kNN, data=inc_boo)
+    
+    ## compute test error using original data
+    mean((inc$Income - predict(knn_fit, inc))^2)
+    
+  })
+  return(berrs)
+}
+
+## Compute bootstrap validation for kNN = 1:20
+berrs <- sapply(1:20, bootknnreg)
+print(berrs) ## rows are bootstrap (1:100), cols are kNN (1:20)
+berrs_mean <- apply(berrs, 2, mean)
+berrs_sd   <- apply(berrs, 2, sd)
+
+## Plot the results of bootstrap validation for kNN = 1:20
+plot(x=1:20, y=berrs_mean, 
+     ylim=range(berrs),
+     xlab="'k' in kNN", ylab="Bootstrap of Test Error")
+segments(x0=1:20, x1=1:20,
+         y0=berrs_mean-berrs_sd,
+         y1=berrs_mean+berrs_sd)
+best_idx <- which.min(berrs_mean)
+points(x=best_idx, y=berrs_mean[best_idx], pch=20)
+abline(h=berrs_mean[best_idx] + berrs_sd[best_idx], lty=3)
+
+
+
+
