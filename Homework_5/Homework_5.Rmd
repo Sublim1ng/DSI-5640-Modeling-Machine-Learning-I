@@ -5,13 +5,79 @@ output: github_document
 date: "2023-04-03"
 ---
 
+
+# Gradient Boosting
+### Load required libraries
 ```{r}
-library('magrittr')
-library('dplyr')
-library('rpart')
-library('partykit')
-library('utils')
-library('manipulate')
+library(gbm)
+library(caret)
+```
+
+### Load the datasets
+```{r}
+url_train <- "https://hastie.su.domains/ElemStatLearn/datasets/vowel.train"
+vowel_data_train <- read.csv(url_train, header = TRUE, sep = ",")
+
+url_test <- "https://hastie.su.domains/ElemStatLearn/datasets/vowel.test"
+vowel_data_test <- read.csv(url_test, header = TRUE, sep = ",")
+```
+
+### Split the data
+```{r}
+train_X <- vowel_data_train[, 3:12]
+train_y <- vowel_data_train$y
+test_X <- vowel_data_test[, 3:12]
+test_y <- vowel_data_test$y
+
+```
+
+### Use 5-fold cross-validation to tune the model
+```{r}
+tuneGrid <- expand.grid(n.trees = c(100, 200, 300),
+                        interaction.depth = c(1, 2, 3),
+                        shrinkage = c(0.001, 0.01, 0.1),
+                        n.minobsinnode = c(5, 10, 20))
+
+fitControl <- trainControl(method = "cv", number = 5)
+model <- train(train_X, train_y, method = "gbm", trControl = fitControl,
+               verbose = FALSE, tuneGrid = tuneGrid)
+```
+
+### Print the best tuning parameters
+```{r}
+print(model$bestTune)
+```
+
+### Fit the final model with the best tuning parameters
+```{r}
+final_model <- gbm(y ~ ., data = vowel_data_train[, 2:12], distribution = "multinomial",
+                   n.trees = model$bestTune$n.trees,
+                   interaction.depth = model$bestTune$interaction.depth,
+                   shrinkage = model$bestTune$shrinkage,
+                   n.minobsinnode = model$bestTune$n.minobsinnode,
+                   cv.folds = 5, verbose = FALSE)
+```
+
+### Make predictions
+```{r}
+test_y_pred <- predict(final_model, newdata = test_X, n.trees = model$bestTune$n.trees, type = "response")
+```
+
+### Convert predictions to class labels
+```{r}
+test_y_pred_labels <- matrix(test_y_pred, ncol = length(unique(train_y)), byrow = TRUE)
+test_y_pred_class <- max.col(test_y_pred_labels)
+```
+
+### Compute the misclassification rate using the 'vowel.test' data
+```{r}
+misclassification_rate <- sum(test_y_pred_class != test_y) / length(test_y)
+print(paste0("Misclassification rate: ", misclassification_rate))
+```
+
+
+# XGBoosting
+```{r}
 library(caret)
 library(xgboost)
 ```
