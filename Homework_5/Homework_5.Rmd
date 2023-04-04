@@ -1,0 +1,101 @@
+---
+title: "Homework 5"
+author: Ningyu Han
+output: github_document
+date: "2023-04-03"
+---
+
+```{r}
+library('magrittr')
+library('dplyr')
+library('rpart')
+library('partykit')
+library('utils')
+library('manipulate')
+library(caret)
+library(xgboost)
+```
+
+### Load Data
+```{r}
+url <- "https://hastie.su.domains/ElemStatLearn/datasets/vowel.train"
+vowel_data_train<- read.csv(url, header = TRUE, sep = ",")
+```
+
+```{r}
+url <- "https://hastie.su.domains/ElemStatLearn/datasets/vowel.test"
+vowel_data_test<- read.csv(url, header = TRUE, sep = ",")
+```
+
+### Split Data
+```{r}
+train_X <- vowel_data_train[, 3:12]
+train_y <- vowel_data_train$y
+```
+
+### Fit the model
+```{r}
+mat_x = as.matrix(train_X)
+model <- xgboost(data = mat_x, label = train_y, nrounds = 50)
+print(model)
+```
+
+### Define the tuning parameter grid
+```{r}
+tuning_grid <- expand.grid(nrounds = c(50, 100, 150),
+                           max_depth = c(3, 5, 7),
+                           eta = c(0.01, 0.1, 0.3),
+                           gamma = c(0, 0.1, 0.3),
+                           subsample = c(0.5, 0.7, 1),
+                           colsample_bytree = c(0.5, 0.7, 1),
+                           min_child_weight = c(1, 3, 5))
+```
+
+### Fit the model using 5-fold cross-validation
+```{r}
+model_tune <- train(mat_x, train_y, method = "xgbTree", 
+                    tuneGrid = tuning_grid, 
+                    trControl = trainControl(method = "cv", number = 5))
+print(model_tune)
+```
+
+### Get the best fit
+```{r}
+print(model_tune$bestTune)
+```
+
+### test data
+```{r}
+test_X <- vowel_data_test[, 3:12]
+mat_test_x <- as.matrix(test_X)
+test_y <- vowel_data_test$y
+```
+
+# With the tuned model, make predictions using the majority vote method
+```{r}
+model_final <- xgboost(data = mat_x, label = train_y, 
+                       nrounds = model_tune$bestTune$nrounds,
+                       max_depth = model_tune$bestTune$max_depth,
+                       eta = model_tune$bestTune$eta,
+                       gamma = model_tune$bestTune$gamma,
+                       subsample = model_tune$bestTune$subsample,
+                       colsample_bytree = model_tune$bestTune$colsample_bytree,
+                       min_child_weight = model_tune$bestTune$min_child_weight)
+
+test_y_pred <- predict(model_final, newdata = as.matrix(test_X))
+test_y_pred_num <- as.matrix(test_y_pred)
+test_y_pred_majority <- ifelse(rowSums(test_y_pred_num == "0") >= 3, "0", "1")
+```
+
+### Compute the misclassification rate using the ‘vowel.test’ data
+```{r}
+misclassification_rate <- sum(test_y_pred_majority != test_y) / length(test_y)
+print(paste0("Misclassification rate: ", misclassification_rate))
+```
+
+
+
+
+
+
+
