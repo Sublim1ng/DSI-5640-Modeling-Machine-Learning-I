@@ -1,0 +1,27 @@
+---
+title: "Homework_6"
+author: Ningyu Han
+output: github_document
+date: "2023-04-11"
+---
+
+```{r}
+library(tensorflow)
+library(keras)
+library(reticulate)
+```
+
+```{r}
+install_tensorflow(envname = "r-reticulate")
+```
+
+```{r}
+install_keras(envname = "r-reticulate")
+```
+
+```{r}
+library(tensorflow)
+tf$constant("Hello Tensorflow!")
+```
+
+
